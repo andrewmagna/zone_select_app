@@ -1,30 +1,56 @@
-# README
+# Python_FrontEnd
 
-## Fullstack Scaffold for FastAPI and React
+Fullstack app:
+- **Backend:** FastAPI (Python 3.11), SQLite (SQLAlchemy), OpenCV optional auto-detection, OPC UA client writes `Zone_1_CMD..Zone_40_CMD`
+- **Frontend:** React + Vite (desktop UI), operator views + admin zone editor
 
-This repository contains a fullstack scaffold with a FastAPI backend and a React frontend.
+## Assets layout (Windows)
+Parts thumbnails:
+- `C:\assets\parts\<part_name>.png`
 
-### Backend
-- **FastAPI** application built with Python 3.11.
-- Endpoints to:
-  - List parts by scanning `C:\assets\parts`.
-  - Get part details with sections from `C:\assets\sections\<part>\section_N.png`.
-  - Serve static files from `C:\assets`.
-  - Store zone polygons and zone state in SQLite using SQLAlchemy.
-  - OpenCV endpoint to detect polygons from `section_N_annotated.png`.
+Part sections (clean + annotated):
+- `C:\assets\sections\<part_name>\section_1.png`
+- `C:\assets\sections\<part_name>\section_1_annotated.png`
+- ... up to section_4
 
-### Frontend
-- React application created with Vite.
-- Routes for:
-  - Parts grid.
-  - Part view with SVG polygon overlays and toggle calls.
-  - Admin zone editor with optional auto-detect and manual polygon editing/reordering.
+Notes:
+- `<part_name>` uses underscores; UI displays spaces.
 
-### Development Instructions for Windows
-1. Clone the repository.
-2. Set up a virtual environment for Python and install dependencies.
-3. Run the FastAPI app.
-4. Set up the Vite React app and run it.
+## Backend setup (Windows)
+```powershell
+cd backend
+py -3.11 -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+copy .env.example .env
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
 
-### .env.example
-Create a `.env` file based on `.env.example` for OPC UA endpoint and node naming configuration.
+Backend docs:
+- http://localhost:8000/docs
+
+## Frontend setup
+```powershell
+cd frontend
+npm install
+npm run dev -- --host 0.0.0.0 --port 5173
+```
+
+Open: http://localhost:5173
+
+## Admin
+Admin routes require an admin key.
+
+Set in `backend/.env`:
+- `ADMIN_KEY=...`
+
+Frontend: open `/admin/login`, enter key.
+
+## OPC UA
+Set in `backend/.env`:
+- `OPCUA_ENDPOINT=opc.tcp://192.168.0.149:4850/Magna_IOServer`
+
+Backend discovers nodes by BrowseName under `Objects`:
+- `Zone_1_CMD` ... `Zone_40_CMD`
+
+Writes integer 0/1.
