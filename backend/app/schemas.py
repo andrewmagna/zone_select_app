@@ -1,21 +1,21 @@
+from __future__ import annotations
+
 from pydantic import BaseModel
+from typing import List
 
 
 class PartSummary(BaseModel):
-    id: int
-    name: str
-    description: str
-    price: float
+    partName: str
+    displayName: str
+    thumbnailUrl: str
+
+
+class PartSection(BaseModel):
+    sectionIndex: int
+    imageUrl: str
 
 
 class PartDetail(BaseModel):
-    id: int
-    name: str
-    description: str
-    price: float
-    specifications: dict
-    section: 'PartSection'
-
-class PartSection(BaseModel):
-    section_name: str
-    items: list
+    partName: str
+    displayName: str
+    sections: List[PartSection]
