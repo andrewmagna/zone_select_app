@@ -26,11 +26,13 @@ def get_part(part_id: str) -> Dict[str, Any]:
 
         zones_file = zones_dir / f"section{i}.json"
         zones: List[Dict[str, Any]] = []
+        image_size = {"width": 1920, "height": 1080}
 
         if zones_file.exists():
             try:
                 data = json.loads(zones_file.read_text(encoding="utf-8"))
                 zones = data.get("zones", [])
+                image_size = data.get("image_size", image_size)
             except Exception:
                 zones = []
         else:
@@ -41,6 +43,7 @@ def get_part(part_id: str) -> Dict[str, Any]:
                 "index": i,
                 "image_url": f"/parts/{part_id}/sections/section{i}_clean.png",
                 "zones": zones,
+                "image_size": image_size,
                 "has_zones": zones_file.exists(),
             }
         )

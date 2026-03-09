@@ -214,7 +214,7 @@ function SectionViewer({
       <img src={section.image_url} style={{ width: "100%" }} />
 
       <svg
-        viewBox="0 0 1920 1080"
+        viewBox={`0 0 ${section.image_size?.width || 1920} ${section.image_size?.height || 1080}`}
         style={{
           position: "absolute",
           top: 0,
