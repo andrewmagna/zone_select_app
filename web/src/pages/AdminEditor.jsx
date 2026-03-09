@@ -16,6 +16,7 @@ export default function AdminEditor() {
   const [draftPoints, setDraftPoints] = useState([]);
   const [zoneIdInput, setZoneIdInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
   const [availableSections, setAvailableSections] = useState([]);
   const [selectedZoneId, setSelectedZoneId] = useState(null);
   const [selectedVertexIndex, setSelectedVertexIndex] = useState(null);
@@ -80,7 +81,6 @@ export default function AdminEditor() {
       setRenumberInput("");
       setEditMode("move");
       setUnsavedChanges(false);
-      setZoom(1);
       setPanInfo(null);
       setLoading(false);
     }
@@ -121,6 +121,61 @@ export default function AdminEditor() {
   const draftHandleRadius = Math.max(6, 6 * scaleFactor);
   const draftStrokeWidth = Math.max(3, 3 * scaleFactor);
 
+  function clampZoom(value) {
+    return Math.max(0.2, Math.min(3, Number(value.toFixed(2))));
+  }
+
+  function getFitZoom() {
+    const viewer = viewerRef.current;
+    if (!viewer || !imageSize.width || !imageSize.height) {
+      return 1;
+    }
+
+    const viewerWidth = viewer.clientWidth;
+    const viewerHeight = viewer.clientHeight;
+
+    if (!viewerWidth || !viewerHeight) {
+      return 1;
+    }
+
+    const fitWidth = viewerWidth / imageSize.width;
+    const fitHeight = viewerHeight / imageSize.height;
+
+    // Use the stricter fit first
+    const baseFit = Math.min(fitWidth, fitHeight);
+
+    // Then bias upward so the image is actually usable on load
+    const boostedFit = baseFit * 0.95;
+
+    return clampZoom(boostedFit);
+  }
+
+  useEffect(() => {
+    if (loading) return;
+    if (!viewerRef.current) return;
+    if (!imageSize.width || !imageSize.height) return;
+
+    const applyFitZoom = () => {
+      const fitZoom = getFitZoom();
+      setZoom(fitZoom);
+
+      requestAnimationFrame(() => {
+        if (viewerRef.current) {
+          viewerRef.current.scrollLeft = 0;
+          viewerRef.current.scrollTop = 0;
+        }
+      });
+    };
+
+    const raf = requestAnimationFrame(applyFitZoom);
+    window.addEventListener("resize", applyFitZoom);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", applyFitZoom);
+    };
+  }, [loading, imageSize.width, imageSize.height, imageUrl]);
+
   function confirmLoseChanges() {
     if (!unsavedChanges) return true;
     return window.confirm("You have unsaved changes. Leave without saving?");
@@ -143,10 +198,6 @@ export default function AdminEditor() {
     navigate(`/admin/editor/${partId}/${targetSection}?return=${returnTarget}`);
   }
 
-  function clampZoom(value) {
-    return Math.max(0.5, Math.min(3, Number(value.toFixed(2))));
-  }
-
   function zoomIn() {
     setZoom((prev) => clampZoom(prev + 0.1));
   }
@@ -156,12 +207,16 @@ export default function AdminEditor() {
   }
 
   function resetZoom() {
-    setZoom(1);
+    const fitZoom = getFitZoom();
+    setZoom(fitZoom);
     setPanInfo(null);
-    if (viewerRef.current) {
-      viewerRef.current.scrollLeft = 0;
-      viewerRef.current.scrollTop = 0;
-    }
+
+    requestAnimationFrame(() => {
+      if (viewerRef.current) {
+        viewerRef.current.scrollLeft = 0;
+        viewerRef.current.scrollTop = 0;
+      }
+    });
   }
 
   function onViewerWheel(e) {
@@ -428,6 +483,65 @@ export default function AdminEditor() {
     setUnsavedChanges(true);
   }
 
+  async function importOverlay() {
+    if (zones.length > 0) {
+      const ok = window.confirm(
+        "Importing from overlay will replace all current zones in this section. Continue?",
+      );
+      if (!ok) return;
+    }
+
+    try {
+      setImportBusy(true);
+
+      const res = await fetch(
+        `/api/editor/parts/${partId}/sections/${sectionIndex}/import`,
+        {
+          method: "POST",
+        },
+      );
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        alert(data.detail || "Overlay import failed");
+        return;
+      }
+
+      const importedZones = Array.isArray(data.zones) ? data.zones : [];
+      const nextImageSize =
+        data.image_size && data.image_size.width && data.image_size.height
+          ? data.image_size
+          : imageSize;
+
+      setZones(importedZones);
+      setImageSize(nextImageSize);
+      setDraftPoints([]);
+      setZoneIdInput("");
+      setSelectedVertexIndex(null);
+      setRenumberInput("");
+      setEditMode("move");
+      setUnsavedChanges(true);
+
+      if (importedZones.length > 0) {
+        setSelectedZoneId(importedZones[0].zone_id);
+        setRenumberInput(String(importedZones[0].zone_id));
+      } else {
+        setSelectedZoneId(null);
+      }
+
+      if (data.debug) {
+        console.log("Overlay import debug", data.debug);
+      }
+
+      alert(`Imported ${importedZones.length} zones from overlay`);
+    } catch {
+      alert("Overlay import failed");
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
   function deleteZone(zoneId) {
     setZones((prev) => prev.filter((z) => z.zone_id !== zoneId));
     if (selectedZoneId === zoneId) {
@@ -551,7 +665,7 @@ export default function AdminEditor() {
       </div>
 
       <h1 style={{ marginTop: 0 }}>
-        {partId.replaceAll("_", " ")}, Section {sectionIndex}
+        {partId.replaceAll("_", " ")}
       </h1>
 
       <div
@@ -588,7 +702,10 @@ export default function AdminEditor() {
         >
           Clear Draft
         </button>
-        <button onClick={saveSection} disabled={busy}>
+        <button onClick={importOverlay} disabled={importBusy || busy}>
+          {importBusy ? "Importing..." : "Import From Overlay"}
+        </button>
+        <button onClick={saveSection} disabled={busy || importBusy}>
           {busy ? "Saving..." : "Save Section"}
         </button>
 

@@ -3,21 +3,23 @@ from __future__ import annotations
 import json
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
-from fastapi import FastAPI, Request, Response, Depends, HTTPException
+import cv2
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from app.admin_auth import set_admin_cookie, clear_admin_cookie, is_admin, admin_dep
+from app.admin_auth import admin_dep, clear_admin_cookie, is_admin, set_admin_cookie
 from app.audit import init_db, log_apply
-from app.config_store import load_config, save_config, validate_parts_root, AppConfig
-from app.opc_service import connect, write_zones, is_connected
+from app.config_store import AppConfig, load_config, save_config, validate_parts_root
+from app.opc_service import connect, is_connected, write_zones
 from app.overlay_import import import_polygons_from_overlay
-from app.parts_service import scan_parts, get_part
+from app.parts_service import get_part, scan_parts
 
 
 @asynccontextmanager
-async def lifespan(app):
+async def lifespan(app: FastAPI):
     connect()
     init_db()
     yield
@@ -61,6 +63,36 @@ class EditorSaveRequest(BaseModel):
     image: str
     image_size: dict
     zones: list
+
+
+def _discover_existing_sections(part_dir: Path) -> list[int]:
+    sections_dir = part_dir / "sections"
+    existing: list[int] = []
+
+    for i in range(1, 5):
+        clean_path = sections_dir / f"section{i}_clean.png"
+        if clean_path.exists():
+            existing.append(i)
+
+    return existing
+
+
+def _ensure_existing_section(part_dir: Path, section_index: int) -> Path:
+    image_path = part_dir / "sections" / f"section{section_index}_clean.png"
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail=f"Section {section_index} image not found")
+    return image_path
+
+
+def _read_image_size(image_path: Path) -> dict[str, int]:
+    default_size = {"width": 1920, "height": 1080}
+
+    img = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
+    if img is None:
+        return default_size
+
+    height, width = img.shape[:2]
+    return {"width": int(width), "height": int(height)}
 
 
 @app.get("/api/admin/status")
@@ -124,9 +156,10 @@ def apply(req: ApplyRequest):
     return {"status": "ok"}
 
 
-def load_section_zones(zones_path: Path) -> list:
+def load_section_zones(zones_path: Path) -> list[dict[str, Any]]:
     if not zones_path.exists():
         return []
+
     try:
         data = json.loads(zones_path.read_text(encoding="utf-8"))
         return data.get("zones", [])
@@ -134,28 +167,30 @@ def load_section_zones(zones_path: Path) -> list:
         return []
 
 
-def collect_part_zone_ids(part_dir: Path, exclude_section_index: int | None = None) -> dict:
+def collect_part_zone_ids(part_dir: Path, exclude_section_index: int | None = None) -> dict[str, Any]:
     """
     Returns:
     {
       "used_ids": [1, 2, 11],
       "by_section": {
         1: [1, 2],
-        2: [11]
+        3: [11]
       }
     }
     """
     zones_dir = part_dir / "zones"
-    used_ids = set()
-    by_section = {}
+    used_ids: set[int] = set()
+    by_section: dict[int, list[int]] = {}
 
-    for i in range(1, 5):
+    existing_sections = _discover_existing_sections(part_dir)
+
+    for i in existing_sections:
         if exclude_section_index is not None and i == exclude_section_index:
             continue
 
         section_file = zones_dir / f"section{i}.json"
         zones = load_section_zones(section_file)
-        ids = []
+        ids: list[int] = []
 
         for z in zones:
             zone_id = z.get("zone_id")
@@ -178,21 +213,26 @@ def editor_get_section(part_id: str, section_index: int):
     root = Path(cfg.parts_root)
 
     part_dir = root / part_id
-    image_path = part_dir / "sections" / f"section{section_index}_clean.png"
-    zones_path = part_dir / "zones" / f"section{section_index}.json"
+    if not part_dir.exists():
+        raise HTTPException(status_code=404, detail="Part not found")
 
-    if not image_path.exists():
-        raise HTTPException(status_code=404, detail="Section image not found")
+    image_path = _ensure_existing_section(part_dir, section_index)
+    zones_path = part_dir / "zones" / f"section{section_index}.json"
 
     zones_payload = {
         "image": image_path.name,
-        "image_size": {"width": 1920, "height": 1080},
+        "image_size": _read_image_size(image_path),
         "zones": [],
     }
 
     if zones_path.exists():
         try:
-            zones_payload = json.loads(zones_path.read_text(encoding="utf-8"))
+            loaded = json.loads(zones_path.read_text(encoding="utf-8"))
+            zones_payload = {
+                "image": loaded.get("image", image_path.name),
+                "image_size": loaded.get("image_size", _read_image_size(image_path)),
+                "zones": loaded.get("zones", []),
+            }
         except Exception:
             pass
 
@@ -209,7 +249,7 @@ def editor_get_section(part_id: str, section_index: int):
         "part_id": part_id,
         "section_index": section_index,
         "image_url": f"/parts/{part_id}/sections/section{section_index}_clean.png",
-        "image_size": zones_payload.get("image_size", {"width": 1920, "height": 1080}),
+        "image_size": zones_payload.get("image_size", _read_image_size(image_path)),
         "zones": zones_payload.get("zones", []),
         "part_used_zone_ids_other_sections": part_usage["used_ids"],
         "section_used_zone_ids": current_section_ids,
@@ -223,13 +263,17 @@ def editor_save_section(part_id: str, section_index: int, req: EditorSaveRequest
     root = Path(cfg.parts_root)
 
     part_dir = root / part_id
+    if not part_dir.exists():
+        raise HTTPException(status_code=404, detail="Part not found")
+
+    image_path = _ensure_existing_section(part_dir, section_index)
+
     zones_dir = part_dir / "zones"
     zones_dir.mkdir(parents=True, exist_ok=True)
-
     zones_path = zones_dir / f"section{section_index}.json"
 
-    # Validate current section zone IDs and geometry
-    current_ids = []
+    current_ids: list[int] = []
+
     for z in req.zones:
         zone_id = z.get("zone_id")
         points = z.get("points", [])
@@ -238,10 +282,16 @@ def editor_save_section(part_id: str, section_index: int, req: EditorSaveRequest
             raise HTTPException(status_code=400, detail="Each zone must have an integer zone_id")
 
         if zone_id < 1 or zone_id > 40:
-            raise HTTPException(status_code=400, detail=f"Zone ID {zone_id} is out of range (1..40)")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Zone ID {zone_id} is out of range (1..40)",
+            )
 
         if not isinstance(points, list) or len(points) < 3:
-            raise HTTPException(status_code=400, detail=f"Zone {zone_id} must have at least 3 points")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Zone {zone_id} must have at least 3 points",
+            )
 
         for pt in points:
             if (
@@ -252,7 +302,7 @@ def editor_save_section(part_id: str, section_index: int, req: EditorSaveRequest
             ):
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Zone {zone_id} contains an invalid point"
+                    detail=f"Zone {zone_id} contains an invalid point",
                 )
 
         current_ids.append(zone_id)
@@ -260,7 +310,6 @@ def editor_save_section(part_id: str, section_index: int, req: EditorSaveRequest
     if len(current_ids) != len(set(current_ids)):
         raise HTTPException(status_code=400, detail="Duplicate zone IDs exist within this section")
 
-    # Validate against other sections in the same part
     part_usage = collect_part_zone_ids(part_dir, exclude_section_index=section_index)
     other_used_ids = set(part_usage["used_ids"])
     conflicts = sorted(set(current_ids).intersection(other_used_ids))
@@ -268,12 +317,12 @@ def editor_save_section(part_id: str, section_index: int, req: EditorSaveRequest
     if conflicts:
         raise HTTPException(
             status_code=400,
-            detail=f"Zone IDs already used in other sections of this part: {conflicts}"
+            detail=f"Zone IDs already used in other sections of this part: {conflicts}",
         )
 
     payload = {
-        "image": req.image,
-        "image_size": req.image_size,
+        "image": req.image or image_path.name,
+        "image_size": req.image_size or _read_image_size(image_path),
         "zones": req.zones,
     }
 
@@ -287,13 +336,59 @@ def editor_import_overlay(part_id: str, section_index: int):
     cfg = load_config()
     root = Path(cfg.parts_root)
 
-    overlay_path = root / part_id / "sections" / f"section{section_index}_overlay.png"
+    part_dir = root / part_id
+    if not part_dir.exists():
+        raise HTTPException(status_code=404, detail="Part not found")
+
+    overlay_path = part_dir / "sections" / f"section{section_index}_overlay.png"
+    clean_path = _ensure_existing_section(part_dir, section_index)
 
     try:
-        result = import_polygons_from_overlay(overlay_path)
-        return result
+        result = import_polygons_from_overlay(overlay_path, clean_path=clean_path)
+
+        clean_img = cv2.imread(str(clean_path), cv2.IMREAD_COLOR)
+        if clean_img is None:
+            raise HTTPException(status_code=500, detail="Failed to load clean section image")
+
+        clean_height, clean_width = clean_img.shape[:2]
+
+        overlay_width = result["image_size"]["width"]
+        overlay_height = result["image_size"]["height"]
+
+        if overlay_width <= 0 or overlay_height <= 0:
+            raise HTTPException(status_code=500, detail="Overlay import returned invalid image size")
+
+        scale_x = clean_width / overlay_width
+        scale_y = clean_height / overlay_height
+
+        scaled_zones = []
+        for zone in result["zones"]:
+            scaled_points = [
+                [round(p[0] * scale_x), round(p[1] * scale_y)]
+                for p in zone["points"]
+            ]
+            scaled_zones.append(
+                {
+                    "zone_id": zone["zone_id"],
+                    "points": scaled_points,
+                }
+            )
+
+        return {
+            "image_size": {"width": clean_width, "height": clean_height},
+            "zones": scaled_zones,
+            "debug": {
+                "overlay_size": {"width": overlay_width, "height": overlay_height},
+                "clean_size": {"width": clean_width, "height": clean_height},
+                "scale_x": scale_x,
+                "scale_y": scale_y,
+            },
+        }
+
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Import failed: {e}")
 
