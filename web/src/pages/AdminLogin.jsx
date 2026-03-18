@@ -1,14 +1,17 @@
 import { useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 export default function AdminLogin() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  const next = searchParams.get("next") || "/";
+  const nextFromQuery = searchParams.get("next");
+  const backgroundLocation = location.state?.backgroundLocation;
+  const next = nextFromQuery || backgroundLocation?.pathname || "/";
 
   async function login() {
     setErr("");
@@ -27,7 +30,11 @@ export default function AdminLogin() {
         return;
       }
 
-      navigate(next, { replace: true });
+      if (backgroundLocation) {
+        navigate(-1);
+      } else {
+        navigate(next, { replace: true });
+      }
     } catch {
       setErr("Login failed");
     } finally {
@@ -36,7 +43,11 @@ export default function AdminLogin() {
   }
 
   function closeModal() {
-    navigate(-1);
+    if (backgroundLocation) {
+      navigate(-1);
+    } else {
+      navigate(next, { replace: true });
+    }
   }
 
   function onKeyDown(e) {

@@ -2,11 +2,11 @@ html,
 body,
 #root {
   width: 100%;
+  min-width: 0;
   margin: 0;
   padding: 0;
 }
 
 #root {
   max-width: none;
-  text-align: center;
 }

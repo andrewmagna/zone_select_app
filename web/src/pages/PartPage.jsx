@@ -197,25 +197,28 @@ export default function PartPage() {
     return (
       <div
         style={{
-          padding: "8px 12px 20px",
+          padding: "4px 24px 24px",
           fontFamily: "Arial, sans-serif",
           width: "100%",
           boxSizing: "border-box",
+          color: "#1f2937",
         }}
       >
         <div style={{ marginBottom: 10 }}>
           <Link to="/" style={backLinkStyle}>
-            ← Back
+            ← Back to Parts
           </Link>
         </div>
 
-        <h1 style={{ marginTop: 0, marginBottom: 12 }}>{part.display_name}</h1>
+        <h1 style={{ marginTop: 0, marginBottom: 12, fontSize: 28 }}>
+          {part.display_name}
+        </h1>
 
         <div
           style={{
             padding: 16,
             border: "1px solid #d1d5db",
-            borderRadius: 12,
+            borderRadius: 14,
             background: "#fff",
             maxWidth: 520,
           }}
@@ -255,7 +258,7 @@ export default function PartPage() {
   return (
     <div
       style={{
-        padding: "8px 10px 20px",
+        padding: "4px 24px 24px",
         fontFamily: "Arial, sans-serif",
         color: "#1f2937",
         width: "100%",
@@ -264,19 +267,21 @@ export default function PartPage() {
     >
       <div style={{ marginBottom: 8 }}>
         <Link to="/" style={backLinkStyle}>
-          ← Back
+          ← Back to Parts
         </Link>
       </div>
 
-      <div style={{ marginBottom: 14 }}>
-        <h1 style={{ margin: 0, fontSize: 28 }}>{part.display_name}</h1>
+      <div style={{ marginBottom: 16 }}>
+        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800 }}>
+          {part.display_name}
+        </h1>
       </div>
 
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: isNarrow ? "1fr" : "minmax(0, 1fr) 300px",
-          gap: 14,
+          gridTemplateColumns: isNarrow ? "1fr" : "minmax(0, 1fr) 320px",
+          gap: 16,
           alignItems: "start",
           width: "100%",
         }}
@@ -286,7 +291,7 @@ export default function PartPage() {
             border: "1px solid #d1d5db",
             borderRadius: 14,
             background: "#fff",
-            padding: 10,
+            padding: 12,
             minWidth: 0,
             width: "100%",
             boxSizing: "border-box",
@@ -295,7 +300,7 @@ export default function PartPage() {
           <div
             style={{
               display: "grid",
-              gap: 14,
+              gap: 16,
               width: "100%",
             }}
           >
@@ -339,7 +344,7 @@ export default function PartPage() {
         <div
           style={{
             display: "grid",
-            gap: 14,
+            gap: 16,
             width: "100%",
           }}
         >

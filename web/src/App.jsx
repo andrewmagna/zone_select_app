@@ -3,6 +3,7 @@ import PartsGrid from "./pages/PartsGrid.jsx";
 import PartPage from "./pages/PartPage.jsx";
 import AdminLogin from "./pages/AdminLogin.jsx";
 import AdminEditor from "./pages/AdminEditor.jsx";
+import AppHeader from "./components/AppHeader.jsx";
 
 export default function App() {
   const location = useLocation();
@@ -11,13 +12,33 @@ export default function App() {
 
   return (
     <>
-      <Routes location={backgroundLocation || location}>
-        <Route path="/" element={<PartsGrid />} />
-        <Route path="/part/:partId" element={<PartPage />} />
-        <Route path="/admin/editor/:partId/:sectionIndex" element={<AdminEditor />} />
-        <Route path="/admin/login" element={<AdminLogin />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "#f8fafc",
+          width: "100%",
+        }}
+      >
+        <AppHeader />
+
+        <div
+          style={{
+            width: "100%",
+            boxSizing: "border-box",
+          }}
+        >
+          <Routes location={backgroundLocation || location}>
+            <Route path="/" element={<PartsGrid />} />
+            <Route path="/part/:partId" element={<PartPage />} />
+            <Route
+              path="/admin/editor/:partId/:sectionIndex"
+              element={<AdminEditor />}
+            />
+            <Route path="/admin/login" element={<AdminLogin />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </div>
+      </div>
 
       {backgroundLocation && (
         <Routes>
